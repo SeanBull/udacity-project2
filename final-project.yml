@@ -1,8 +1,4 @@
 Parameters:
-  # Paramenters are entirely optional.
-  # but using them will make your cloudformation templates more reusable
-  # use them for things that may change over time, such as instance type,
-  # VPCs and so on.
   # <------------------Parameters for Network------------------------>
   EnvironmentName:
     Description: An environment name that will be prefixed to resource names
@@ -40,11 +36,6 @@ Parameters:
     Default: 10.0.3.0/24
 
 Resources:
-  # instace profile contains the IAM Role name(s) that we want to associate to our auto scaling EC2 Servers
-  # never give too much permissions to your EC2 instances! if they get hacked, the permissions get hacked also!
-  # in this example, I create a Role called UdacityS3ReadOnlyC2 and just give it a policy of S3 Read-Only Access
-  # --------------------Resources for bukcet------------------------->
-
   # <-----------------Resources for Network-------------------------->
   VPC:
     Type: AWS::EC2::VPC
@@ -388,7 +379,7 @@ Resources:
     Properties:
       ImageId: ami-02e136e904f3da870
       InstanceType: t2.micro
-      KeyName: project2
+      KeyName: project2-jumpbox
       NetworkInterfaces:
         - AssociatePublicIpAddress: true
           DeviceIndex: 0
@@ -401,7 +392,7 @@ Resources:
           Value: Jumpbox
 Outputs:
   #output for dns name of loadbalancer
-  UdagramLBURL:
+  UdagramLBurl:
     Description: Changing the DNS name of the load balancer
     Value: !Sub http://${WebAppLB.DNSName}
     Export:
