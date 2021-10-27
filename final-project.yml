@@ -197,7 +197,7 @@ Resources:
       RouteTableId: !Ref PrivateRouteTable2
       SubnetId: !Ref PrivateSubnet2
 
-  #<----------------Resources for serves-------------------->
+  #<----------------Resources for servers-------------------->
   # allowing 443 traffic so that AWS can communicate with S3
   WebServerSecGroup:
     Type: AWS::EC2::SecurityGroup
@@ -295,7 +295,6 @@ Resources:
 
       # ami image for ubuntu server 18
       ImageId: !Ref EC2AMI
-      KeyName: project2
       SecurityGroups:
         - Ref: WebServerSecGroup
       #   size to allow for 2 vcpus and 4GB RAM
