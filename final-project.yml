@@ -1,8 +1,4 @@
 Parameters:
-  # Paramenters are entirely optional.
-  # but using them will make your cloudformation templates more reusable
-  # use them for things that may change over time, such as instance type,
-  # VPCs and so on.
   # <------------------Parameters for Network------------------------>
   EnvironmentName:
     Description: An environment name that will be prefixed to resource names
@@ -13,6 +9,11 @@ Parameters:
     Description: Please enter the IP range (CIDR notation) for this VPC
     Type: String
     Default: 10.0.0.0/16
+
+  EC2AMI:
+    Description: Please enter the AMI for the private EC2 servers
+    Type: String
+    Default: ami-0747bdcabd34c712a
 
   PublicSubnet1CIDR:
     Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
@@ -35,10 +36,6 @@ Parameters:
     Default: 10.0.3.0/24
 
 Resources:
-  # instace profile contains the IAM Role name(s) that we want to associate to our auto scaling EC2 Servers
-  # never give too much permissions to your EC2 instances! if they get hacked, the permissions get hacked also!
-  # in this example, I create a Role called UdacityS3ReadOnlyC2 and just give it a policy of S3 Read-Only Access
-
   # <-----------------Resources for Network-------------------------->
   VPC:
     Type: AWS::EC2::VPC
@@ -201,10 +198,12 @@ Resources:
       SubnetId: !Ref PrivateSubnet2
 
   #<----------------Resources for serves-------------------->
+  # allowing 443 traffic so that AWS can communicate with S3
   WebServerSecGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: This is a security group for our web servers
+      VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -219,7 +218,11 @@ Resources:
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
-      VpcId: !Ref VPC
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
   LBSecGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -235,6 +238,7 @@ Resources:
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
+
   WebAppGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
@@ -248,6 +252,30 @@ Resources:
         - Ref: WebAppTargetGroup
       HealthCheckGracePeriod: 60
       HealthCheckType: ELB
+
+  # IAM role for ec2 to access s3
+  MyAWSReadS3IAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Alolow ec2 S3 read only access
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+        # - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+  InstanceProfileS3:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref MyAWSReadS3IAMRole
   # launch configuratin for the servers and Target grroup that links them
   WebAppLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
@@ -258,11 +286,16 @@ Resources:
           apt-get update -y
           apt-get install apache2 -y
           systemctl start apache2.service
+
+          sudo apt install awscli -y
+
           cd /var/www/html
-          echo "Udacity Demo Web Server Up and Running!" > index.html
+          rm index.html -f
+          aws s3 cp s3://project-2-seanbull/index.html .
+
       # ami image for ubuntu server 18
-      ImageId: ami-0747bdcabd34c712a
-      KeyName: vockey
+      ImageId: !Ref EC2AMI
+      KeyName: project2
       SecurityGroups:
         - Ref: WebServerSecGroup
       #   size to allow for 2 vcpus and 4GB RAM
@@ -271,6 +304,7 @@ Resources:
         - DeviceName: "/dev/sdk"
           Ebs:
             VolumeSize: "10"
+      IamInstanceProfile: !Ref InstanceProfileS3
 
   WebAppTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
@@ -306,7 +340,8 @@ Resources:
         Ref: WebAppLB
       Port: "80"
       Protocol: HTTP
-  ALBListenerRule:
+
+  ListenerRule:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
     Properties:
       Actions:
@@ -317,26 +352,48 @@ Resources:
           Values: [/]
       ListenerArn: !Ref "Listener"
       Priority: 1
-#   ProfileWithRolesForOurApp:
-#     Type: AWS::IAM::InstanceProfile
-#     Properties:
-#     Roles:
-#       - UdacityS3ReadOnlyEC2
-# Outputs:
-# This is also optional.
-# Bonus points for useful outputs!
-# for example, if you create a Load Balancer
-# it's nice to output the URL to it here, so that we don't have to go to the console to get it.
-# Sample UserData
-# When creating your Launch Configuration, you may need a UserData script
-# here's one that you can use for Ubuntu Linux that will:
-# Install Apache Web Server, Start it, and create an index.html that will be displayed
-# when you visit the IP address of this server with your web browser
-#Here it is:
-#
-#          #!/bin/bash
-#          apt-get update -y
-#          apt-get install apache2 -y
-#          systemctl start apache2.service
-#          cd /var/www/html
-#          echo "Udacity Demo Web Server Up and Running!" > index.html
+
+  # <--------------------Jumpbox------------------>
+  JumpBoxSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for our jumpbox
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - CidrIp: 51.198.9.95/32
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+      # SecurityGroupEgress:
+      #   -
+      #         CidrIp: string
+      #         CidrIpv6: string
+      #         Description: string
+      #         FromPort: 123
+      #         ToPort: 123
+      #         IpProtocol: string
+      #         DestinationSecurityGroupId: string
+      #         DestinationPrefixListId: string
+  JumpBoxEC2:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-02e136e904f3da870
+      InstanceType: t2.micro
+      KeyName: project2-jumpbox
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet:
+            - Ref: JumpBoxSG
+          SubnetId:
+            Ref: PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: Jumpbox
+Outputs:
+  #output for dns name of loadbalancer
+  UdagramLBurl:
+    Description: Changing the DNS name of the load balancer
+    Value: !Sub http://${WebAppLB.DNSName}
+    Export:
+      Name: !Sub ${EnvironmentName}-LB-DNS
